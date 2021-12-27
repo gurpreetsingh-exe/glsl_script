@@ -30,8 +30,6 @@ from pathlib import Path
 from nodeitems_utils import NodeItem, register_node_categories, unregister_node_categories
 from nodeitems_builtins import ShaderNodeCategory
 
-print(__name__)
-
 path = Path(__file__).parent
 
 def get_modules(path):

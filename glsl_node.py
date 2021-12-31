@@ -11,10 +11,14 @@ class ShaderNodeGLSLScript(bpy.types.ShaderNodeCustomGroup):
     bl_idname = "ShaderNodeGLSLScript"
     bl_label = "GLSL Script"
 
+    node_dict = {}
+
     is_init: bpy.props.BoolProperty(default=False)
+    is_compiled: bpy.props.BoolProperty(default=False)
     time: bpy.props.FloatProperty(default=0, precision=4)
 
     def update_node(self, context):
+        self.compile_shader()
         self.update()
 
     resolution: bpy.props.EnumProperty(name="Resolution", items=(
@@ -60,6 +64,7 @@ void main() {
 
         self.set_image_props(size, 'sRGB')
         self.is_init = True
+        self.node_dict[hash(self)] = {}
 
     def set_image_props(self, size, color_space):
         self.image.colorspace_settings.name = color_space
@@ -83,24 +88,41 @@ void main() {
         if self.resolution == 'CUSTOM':
             layout.prop(self, "custom_res")
 
+    def compile_shader(self):
+        shader = gpu.types.GPUShader(self.vert, self.frag.as_string())
+        batch = batch_for_shader(shader, 'TRI_FAN', {
+            'a_position': ((-1, -1), (1, -1), (1, 1), (-1, 1)),
+            'a_uv': ((0, 0), (1, 0), (1, 1), (0, 1)),
+        })
+        data = self.node_dict[hash(self)]
+        data['shader'] = shader
+        data['batch'] = batch
+        self.is_compiled = True
+
     def update(self):
         if not self.is_init:
             return
 
         if not self.frag:
             return
+
+        if not self.is_compiled:
+            self.compile_shader()
+
         start = default_timer()
 
         size = self.custom_res if self.resolution == 'CUSTOM' else int(self.resolution)
         self.set_image_props(size, 'sRGB')
 
-        offscreen = gpu.types.GPUOffScreen(size, size)
+        data = self.node_dict[hash(self)]
+        shader = data['shader']
+        batch = data['batch']
+        try:
+            offscreen = gpu.types.GPUOffScreen(size, size, format="RGBA16")
+        except:
+            offscreen = gpu.types.GPUOffScreen(size, size)
+
         with offscreen.bind():
-            shader = gpu.types.GPUShader(self.vert, self.frag.as_string())
-            batch = batch_for_shader(shader, 'TRI_FAN', {
-                'a_position': ((-1, -1), (1, -1), (1, 1), (-1, 1)),
-                'a_uv': ((0, 0), (1, 0), (1, 1), (0, 1)),
-            })
             shader.bind()
             batch.draw(shader)
 
